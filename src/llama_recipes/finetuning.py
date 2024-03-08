@@ -153,10 +153,12 @@ def main(**kwargs):
     if train_config.use_peft:
         peft_config = generate_peft_config(train_config, kwargs)
         model = get_peft_model(model, peft_config)
+        if train_config.pretrnd_peft_model != "":
+            model.load_adapter(train_config.pretrnd_peft_model, model.active_adapter, is_trainable=True)
+            print(f"@@ peft model, {train_config.pretrnd_peft_model}, is loaded for continual finetuning!")
         model.print_trainable_parameters()
         if wandb_run:
             wandb_run.config.update(peft_config)
-
         
     hsdp_device_mesh = None
     if fsdp_config.hsdp and fsdp_config.sharding_strategy == ShardingStrategy.HYBRID_SHARD:
@@ -178,6 +180,33 @@ def main(**kwargs):
         elif torch.cuda.is_available():
             device_id = torch.cuda.current_device()
 
+        from copy import deepcopy
+        source_model = FSDP(
+            deepcopy(model),
+            auto_wrap_policy= my_auto_wrapping_policy if train_config.use_peft else wrapping_policy,
+            cpu_offload=CPUOffload(offload_params=True) if fsdp_config.fsdp_cpu_offload else None,
+            mixed_precision=mixed_precision_policy if not fsdp_config.pure_bf16 else None,
+            sharding_strategy=fsdp_config.sharding_strategy,
+            device_mesh=hsdp_device_mesh,
+            device_id=device_id,
+            limit_all_gathers=True,
+            sync_module_states=train_config.low_cpu_fsdp,
+            param_init_fn=lambda module: module.to_empty(device=torch.device("cuda"), recurse=False)
+            if train_config.low_cpu_fsdp and rank != 0 else None,
+        )
+        hidden_model = FSDP(
+            deepcopy(model),
+            auto_wrap_policy= my_auto_wrapping_policy if train_config.use_peft else wrapping_policy,
+            cpu_offload=CPUOffload(offload_params=True) if fsdp_config.fsdp_cpu_offload else None,
+            mixed_precision=mixed_precision_policy if not fsdp_config.pure_bf16 else None,
+            sharding_strategy=fsdp_config.sharding_strategy,
+            device_mesh=hsdp_device_mesh,
+            device_id=device_id,
+            limit_all_gathers=True,
+            sync_module_states=train_config.low_cpu_fsdp,
+            param_init_fn=lambda module: module.to_empty(device=torch.device("cuda"), recurse=False)
+            if train_config.low_cpu_fsdp and rank != 0 else None,
+        )
         model = FSDP(
             model,
             auto_wrap_policy= my_auto_wrapping_policy if train_config.use_peft else wrapping_policy,
@@ -201,7 +230,7 @@ def main(**kwargs):
 
     dataset_config = generate_dataset_config(train_config, kwargs)
 
-     # Load and preprocess the dataset for training and validation
+    # Load and preprocess the dataset for training and validation
     dataset_train = get_preprocessed_dataset(
         tokenizer,
         dataset_config,
@@ -278,6 +307,8 @@ def main(**kwargs):
         local_rank if train_config.enable_fsdp else None,
         rank if train_config.enable_fsdp else None,
         wandb_run,
+        source_model=source_model,
+        hidden_model=hidden_model,
     )
     if not train_config.enable_fsdp or rank==0:
         [print(f'Key: {k}, Value: {v}') for k, v in results.items()]

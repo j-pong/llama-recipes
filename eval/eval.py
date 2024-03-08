@@ -40,7 +40,7 @@ def handle_output(args, results, logger):
         return
 
     path = Path(args.output_path)
-    if path.is_file() or path.with_name("results.json").is_file():
+    if path.is_file() or path.with_name(args.output_file).is_file():
         logger.warning(f"File already exists at {path}. Results will be overwritten.")
 
     output_dir = path.parent if path.suffix in (".json", ".jsonl") else path
@@ -50,7 +50,7 @@ def handle_output(args, results, logger):
     if args.show_config:
         logger.info(results_str)
 
-    file_path = os.path.join(args.output_path, "results.json")
+    file_path = os.path.join(args.output_path, args.output_file)
     with open(file_path , "w", encoding="utf-8") as f:
         f.write(results_str)
 
@@ -68,8 +68,13 @@ def handle_output(args, results, logger):
     summary = f"{args.model} ({args.model_args}), gen_kwargs: ({args.gen_kwargs}), limit: {args.limit}, num_fewshot: {args.num_fewshot}, batch_size: {args.batch_size}{f' ({batch_sizes})' if batch_sizes else ''}"
     logger.info(summary)
     logger.info(make_table(results))
+    summary_file_path = os.path.join(args.output_path, args.summary_file)
+    with open(summary_file_path , "w", encoding="utf-8") as f:
+        f.write(make_table(results))
     if "groups" in results:
         logger.info(make_table(results, "groups"))
+        with open(summary_file_path , "a", encoding="utf-8") as f:
+            f.write(make_table(results))
 
 
 def load_tasks(args):
@@ -137,6 +142,12 @@ def parse_eval_args():
     )
     parser.add_argument(
         "--output_path", "-o", type=str, default=None, help="Path for saving results."
+    )
+    parser.add_argument(
+        "--output_file", "-of", type=str, default="results.json", help="File for saving results."
+    )
+    parser.add_argument(
+        "--summary_file", "-sf", type=str, default="table.md", help="File for saving results."
     )
     parser.add_argument(
         "--limit",

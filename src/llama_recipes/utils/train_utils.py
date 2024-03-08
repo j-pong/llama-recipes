@@ -25,6 +25,8 @@ from llama_recipes.policies import fpSixteen,bfSixteen, get_llama_wrapper
 from llama_recipes.utils.memory_utils import MemoryTrace
 from accelerate.utils import is_xpu_available, is_ccl_available
 
+import torch.nn.functional as F
+
 def set_tokenizer_params(tokenizer: LlamaTokenizer):
     tokenizer.pad_token_id = 0
     tokenizer.padding_side = "left"
@@ -33,7 +35,85 @@ def set_tokenizer_params(tokenizer: LlamaTokenizer):
 def byte2mb(x):
     return int(x / 2**20)
 
-def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None):
+def to_float(t):
+    return t.float() if torch.is_floating_point(t) else t
+
+@torch.no_grad()
+def fast_moments(
+    models,
+    parameters,
+    running_vars,
+    update_and_transfer=False
+): 
+    assert len(models) == 3
+    alpha, beta, gamma = parameters
+    predicted_var, r = running_vars
+    src_model, model, hidden_model = models
+    
+    zip_models = zip(src_model.parameters(), 
+        model.parameters(), 
+        hidden_model.parameters())
+    
+    # Bayesian filtering
+    log_energy_buffer = 0.0
+    dims = 0
+    for models_param in zip_models:
+        if len(models_param) == 3:
+            src_param, param, hidden_param = models_param
+        else:
+            raise NotImplementedError
+        
+        if param.requires_grad: 
+            # A. predict step
+            if alpha < 1.0:
+                predicted_parm = alpha * to_float(hidden_param[:].data[:]) \
+                    + (1 - alpha) * to_float(src_param[:].data[:])
+            else:
+                predicted_parm = to_float(hidden_param[:].data[:])
+                
+            fp32_param = to_float(param[:].data[:])
+            
+            log_energy = F.mse_loss(fp32_param, predicted_parm, reduction="sum") \
+                / (2 * (predicted_var + r))
+            log_energy_buffer += log_energy
+            dims += fp32_param.numel()
+            
+            if update_and_transfer:
+                # B. update step for hidden
+                hidden_param_updated = beta * predicted_parm \
+                    + (1 - beta) * fp32_param
+                hidden_param.data[:] = hidden_param_updated.half()
+                
+                # C. transfer step for new observation
+                param.data[:] = (gamma * fp32_param \
+                    + (1 - gamma) * hidden_param_updated).half()
+                
+    log_energy = log_energy_buffer / dims
+        
+    return model, log_energy
+
+@torch.no_grad()
+def fast_bayesian_filtering(models, hidden_var, alpha=0.99, q=0.001, gamma=0.99):
+    # Prepare parameter of KF
+    ## A. prepare predict step
+    predicted_var = alpha ** 2 * hidden_var + q
+    
+    ## B. prepare update step
+    r = (1 - q)
+    beta = r / (predicted_var + r)
+    hidden_var = beta * predicted_var
+    
+    # Bayesian Filtering
+    model, log_energy = fast_moments(
+        models,
+        parameters=[alpha, beta, gamma],
+        running_vars=[hidden_var, r],
+        update_and_transfer=True
+    )
+    
+    return model, hidden_var
+
+def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None, source_model=None, hidden_model=None):
     """
     Trains the model on the given dataloader
 
@@ -74,6 +154,15 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
         train_step_loss = []
         val_step_loss = []
         val_step_perplexity = []
+        
+    # continual momentum filtering
+    if hidden_model is not None:
+        for param in hidden_model.parameters():
+            param.detach_()
+        for param in source_model.parameters():
+            param.detach_()
+        models = [source_model, model, hidden_model]
+        hidden_var = 0.0
         
     epoch_times = []
     checkpoint_times = []
@@ -132,6 +221,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         optimizer.step()
                         optimizer.zero_grad()
                         pbar.update(1)
+                        
+                # solve linear SDE of training tranjectory
+                models = [models[0], model, models[2]]
+                model, hidden_var = fast_bayesian_filtering(models, hidden_var)
 
                 if wandb_run: 
                     if not train_config.enable_fsdp or rank==0:

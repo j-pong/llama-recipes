@@ -23,8 +23,24 @@ class alpaca_dataset:
     dataset: str = "alpaca_dataset"
     train_split: str = "train"
     test_split: str = "val"
-    data_path: str = "src/llama_recipes/datasets/alpaca_data.json"
+    data_path: str = "data/alpaca_data.json"
+
+
+@dataclass
+class koalpaca_dataset:
+    dataset: str = "koalpaca_dataset"
+    train_split: str = "train"
+    test_split: str = "val"
+    data_path: str = "data/koalpaca_data.json"
     
+ 
+@dataclass
+class kullm_dataset:
+    dataset: str = "kullm_dataset"
+    train_split: str = "train"
+    test_split: str = "val"
+    data_path: str = "data/kullm_data.jsonl"
+
     
 @dataclass
 class custom_dataset:
