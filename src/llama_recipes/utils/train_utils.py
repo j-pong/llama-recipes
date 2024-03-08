@@ -113,7 +113,23 @@ def fast_bayesian_filtering(models, hidden_var, alpha=0.99, q=0.001, gamma=0.99)
     
     return model, hidden_var
 
-def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None, source_model=None, hidden_model=None):
+def train(
+    model, 
+    train_dataloader,
+    eval_dataloader, 
+    tokenizer, 
+    optimizer, 
+    lr_scheduler, 
+    gradient_accumulation_steps, 
+    train_config, 
+    fsdp_config=None, 
+    local_rank=None, 
+    rank=None, 
+    wandb_run=None, 
+    source_model=None, 
+    hidden_model=None, 
+    cmf_parameters=None
+    ):
     """
     Trains the model on the given dataloader
 
@@ -224,7 +240,12 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         
                 # solve linear SDE of training tranjectory
                 models = [models[0], model, models[2]]
-                model, hidden_var = fast_bayesian_filtering(models, hidden_var)
+                model, hidden_var = fast_bayesian_filtering(
+                    models=models, 
+                    hidden_var=hidden_var, 
+                    alpha=cmf_parameters["alpha"],
+                    q=cmf_parameters["q"],
+                    gamma=cmf_parameters["gamma"])
 
                 if wandb_run: 
                     if not train_config.enable_fsdp or rank==0:
