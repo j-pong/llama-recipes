@@ -309,7 +309,8 @@ def main(**kwargs):
         wandb_run,
         source_model=source_model,
         hidden_model=hidden_model,
-        cmf_parameters={"alpha": train_config.alpha, "q": train_config.q, "gamma": train_config.gamma}
+        cmf_parameters={"alpha": train_config.alpha, "q": train_config.q, "gamma": train_config.gamma},
+        checkpointing=train_config.checkpointing, 
     )
     if not train_config.enable_fsdp or rank==0:
         [print(f'Key: {k}, Value: {v}') for k, v in results.items()]

@@ -215,22 +215,39 @@ def evaluate_model(args):
         # https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
 
         # Evaluate
-        results = evaluator.simple_evaluate(
-            model=args.model,
-            model_args=args.model_args,
-            tasks=task_list,
-            num_fewshot=args.num_fewshot,
-            batch_size=args.batch_size,
-            max_batch_size=args.max_batch_size,
-            device=args.device,
-            use_cache=args.use_cache,
-            limit=args.limit,
-            decontamination_ngrams_path=args.decontamination_ngrams_path,
-            check_integrity=args.check_integrity,
-            write_out=args.write_out,
-            log_samples=args.log_samples,
-            gen_kwargs=args.gen_kwargs,
-        )
+        try:
+            results = evaluator.simple_evaluate(
+                model=args.model,
+                model_args=args.model_args,
+                tasks=task_list,
+                num_fewshot=args.num_fewshot,
+                batch_size=args.batch_size,
+                max_batch_size=args.max_batch_size,
+                device=args.device,
+                use_cache=args.use_cache,
+                limit=args.limit,
+                decontamination_ngrams_path=args.decontamination_ngrams_path,
+                check_integrity=args.check_integrity,
+                write_out=args.write_out,
+                log_samples=args.log_samples,
+                gen_kwargs=args.gen_kwargs,
+            )
+        except:
+           results = evaluator.simple_evaluate(
+                model=args.model,
+                model_args=args.model_args,
+                tasks=task_list,
+                num_fewshot=args.num_fewshot,
+                batch_size=args.batch_size,
+                max_batch_size=args.max_batch_size,
+                device=args.device,
+                use_cache=args.use_cache,
+                limit=args.limit,
+                check_integrity=args.check_integrity,
+                write_out=args.write_out,
+                log_samples=args.log_samples,
+                gen_kwargs=args.gen_kwargs,
+            ) 
         handle_output(args, results, logger)
 
     except Exception as e:

@@ -35,6 +35,12 @@ def set_tokenizer_params(tokenizer: LlamaTokenizer):
 def byte2mb(x):
     return int(x / 2**20)
 
+def checkpointing_fbf(model_src, model_tgt):
+    state_dict = model_src.state_dict()
+    model_tgt.load_state_dict(state_dict)
+    
+    return model_tgt
+    
 def to_float(t):
     return t.float() if torch.is_floating_point(t) else t
 
@@ -128,7 +134,8 @@ def train(
     wandb_run=None, 
     source_model=None, 
     hidden_model=None, 
-    cmf_parameters=None
+    cmf_parameters=None,
+    checkpointing="none",
     ):
     """
     Trains the model on the given dataloader
@@ -261,6 +268,16 @@ def train(
                     save_to_json(metrics_filename, train_step_loss, train_loss, train_step_perplexity, train_prep, val_step_loss, val_loss, val_step_perplexity, val_prep)
             pbar.close()
 
+        # fbf checkpointing
+        if checkpointing == "hidden":
+            models[0] = checkpointing_fbf(models[2], models[0])
+        elif checkpointing == "target":
+            models[0] = checkpointing_fbf(models[1], models[0])
+        elif checkpointing == "none":
+            print("checkpointing is not applied!")
+        else:
+            raise NotImplementedError
+        
         epoch_end_time = time.perf_counter()-epoch_start_time
         epoch_times.append(epoch_end_time)
         # Reducing total_loss across all devices if there's more than one CUDA device

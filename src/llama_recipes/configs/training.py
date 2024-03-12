@@ -42,6 +42,7 @@ class train_config:
     save_metrics: bool = False # saves training metrics to a json file for later plotting
     
     pretrnd_peft_model: str = "" # continual learning
+    checkpointing: str = "none"
     alpha: float=0.99
     q: float=0.001
     gamma: float=0.99
