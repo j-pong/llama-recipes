@@ -272,7 +272,8 @@ def train(
         if checkpointing == "hidden":
             models[0] = checkpointing_fbf(models[2], models[0])
         elif checkpointing == "target":
-            models[0] = checkpointing_fbf(models[1], models[0])
+            models[0] = checkpointing_fbf(models[1], models[0]) # source update
+            models[2] = checkpointing_fbf(models[1], models[2]) # hidden update
         elif checkpointing == "none":
             print("checkpointing is not applied!")
         else:
